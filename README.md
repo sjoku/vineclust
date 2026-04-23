@@ -44,6 +44,7 @@ Standard model-based clustering algorithms (such as Gaussian Mixture Models - GM
 * `vcmm()`: The engine's core model fitting action. Fits the entire vine copula network targeting your `data` for an N `total_comp`. Generates an object of class `vcmm_res()`.
   * `print()`: Exposes high-level model mechanics (BIC, LogLik, Total Pars).
   * `summary()`: Unpacks deep array metrics involving univariate properties, edge classes, and mixture proportions.
+  * `predict()`: Returns clustered assignments for the original set, or predicts likelihood classifications when evaluating `newdata`.
 * `dvcmm()`, `rvcmm()`: Secondary tools used for retrieving internal density probabilities or launching random synthetic arrays tied to built outputs.
 
 ### Marginals Support
@@ -119,6 +120,20 @@ Launch different partition rules to jump-start ECM dependencies minimizing itera
 fit_gmm <- vcmm(data=data_wisc[,c(15,27,29,30)], total_comp=2, methods=c("gmm"))  
 fit_hcVVV <- vcmm(data=data_wisc[,c(15,27,29,30)], total_comp=2, methods=c("hcVVV"))  
 ``` 
+
+### 5. Predicting New Data Assignments
+`predict()` natively routes the S3 object oriented generic functionally integrating conditional matrix mapping over new observations:
+
+```r
+# Pull original vector classifications directly mappings:
+fitted_classes <- predict(fit)
+
+# Computationally allocate unobserved test datasets using the trained components:
+test_data <- data_wisc[200:300, c(15,27,29,30)]
+predicted_classes <- predict(fit, newdata = test_data)
+
+table(predicted_classes)
+```
 
 ## Contact
 
