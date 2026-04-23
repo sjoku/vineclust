@@ -42,9 +42,12 @@ initial_args_check <- function(data, total_comp, is_cvine, init_vinestr, init_tr
   if(!all(is.element(is_cvine,c(NA,0,1))))
     stop("C-vine specification must be NA, 0, or 1")
 
-  if(is.matrix(init_vinestr)){
-    if(VineCopula::RVineMatrixCheck(init_vinestr) != 1)
-      stop("Vine structure must be a valid R-vine matrix, see VineCopula::RVineMatrix")
+  if(is.matrix(init_vinestr) || inherits(init_vinestr, "rvine_structure")){
+    tryCatch({
+      invisible(rvinecopulib::as_rvine_structure(init_vinestr))
+    }, error = function(e){
+      stop("Vine structure must be a valid R-vine matrix or structure, see rvinecopulib::rvine_structure")
+    })
   }
 
   if(!is.na(init_trunclevel)){
@@ -58,8 +61,12 @@ initial_args_check <- function(data, total_comp, is_cvine, init_vinestr, init_tr
   if(!all(is.element(init_mar, c(NA, 'std', 'norm', 'logis', 'gamma', 'lnorm', 'llogis', 'snorm', 'sstd', 'cauchy'))))
     stop("Marginal distribution set has not yet been implemented")
 
-  if(!all(is.element(init_bicop, c(NA,1,2,3,4,5,6,7,8,10,13,14,16,17,18,20,23,24,26,27,28,30,33,34,36,37,38,40))))
-    stop("Bivariate copula family set must be correctly specified, see vcmm")
+  if(is.numeric(init_bicop) && !all(is.na(init_bicop))){
+    if(!all(is.element(init_bicop, c(NA,1,2,3,4,5,6,7,8,10,13,14,16,17,18,20,23,24,26,27,28,30,33,34,36,37,38,40))))
+      stop("Bivariate copula family set must be correctly specified, see vcmm")
+  } else if(!is.character(init_bicop) && !all(is.na(init_bicop))) {
+      stop("Bivariate copula family set must be numeric codes or character strings")
+  }
 
   if(!all(is.element(methods,c(NA,'kmeans', 'gmm', 'hcVVV'))))
     stop("Initial clustering method set has not yet been implemented")
@@ -178,4 +185,28 @@ dens_args_check <- function(x, mix_probs, total_comp){
 
   if(sum(mix_probs) != 1)
     stop("sum of mix_probs must be 1")
+}
+
+#' internal function
+#' @noRd
+map_family <- function(bicop) {
+  if (all(is.na(bicop))) return("all")
+  if (is.character(bicop)) return(bicop)
+  
+  res <- c()
+  for (b in bicop) {
+    if (is.na(b)) next
+    if (b %in% c(1)) res <- c(res, "gaussian")
+    else if (b %in% c(2)) res <- c(res, "student")
+    else if (b %in% c(3, 13, 23, 33)) res <- c(res, "clayton")
+    else if (b %in% c(4, 14, 24, 34)) res <- c(res, "gumbel")
+    else if (b %in% c(5)) res <- c(res, "frank")
+    else if (b %in% c(6, 16, 26, 36)) res <- c(res, "joe")
+    else if (b %in% c(7, 17, 27, 37)) res <- c(res, "bb1")
+    else if (b %in% c(8, 18, 28, 38)) res <- c(res, "bb6")
+    else if (b %in% c(9, 19, 29, 39)) res <- c(res, "bb7")
+    else if (b %in% c(10, 20, 30, 40)) res <- c(res, "bb8")
+  }
+  if (length(res) == 0) return("all")
+  unique(res)
 }

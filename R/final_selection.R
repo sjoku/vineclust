@@ -4,25 +4,28 @@ final_selection <- function(data, total_cluster, final_cvine, final_vinestr, fin
                             iteration, init_method, final_mar, final_bicop){
   if(is.na(final_cvine)) final_cvine <- 0
   if(is.na(final_trunclevel)) final_trunclevel <- ncol(data) - 1
-  if(all(is.na(final_bicop))) final_bicop <- c(1,2,3,4,5,6,7,8,10,13,14,16,17,18,
-                                               20,23,24,26,27,28,30,33,34,36,37,38,40)
+  
+  final_bicop_mapped <- map_family(final_bicop)
+  
   data <- cbind(data, apply(p_probs,1,function(x) which(x==max(x))))
   total_obs <- dim(data)[1]
   total_features <- dim(data)[2]-1
   data_cluster <- list()
-  one_par <- vector()
-  two_par <- vector()
+  
   u_data <- array(0, dim=c(total_obs, total_features, total_cluster))
-  cop_params <- array(0, dim=c(total_features, total_features, total_cluster))
-  cop_params_2 <- array(0, dim=c(total_features, total_features, total_cluster))
-  family_sets <- array(0, dim=c(total_features, total_features, total_cluster))
-  vine_structures <- array(0, dim=c(total_features, total_features, total_cluster))
+  vine_models <- list()
   marginal_fams <- matrix(0,total_features, total_cluster)
   marginal_params <- array(0, dim=c(4, total_features, total_cluster))
+  
   rvine_densities <- matrix(0, total_obs, total_cluster)
   total_margin_dens <- matrix(0, total_obs, total_cluster)
   margin_densities <- array(0, dim=c(total_obs, total_features, total_cluster))
   lik_points <- matrix(0,dim(data)[1],total_cluster)
+  
+  total_cop_pars <- 0
+  
+  p <- progressr::progressor(steps = total_cluster)
+  
   for(j in 1:total_cluster){
     data_cluster[[j]] <- data[data[,(total_features+1)] == j,1:total_features]
     for(i in 1:total_features){
@@ -36,46 +39,45 @@ final_selection <- function(data, total_cluster, final_cvine, final_vinestr, fin
     }
     u_data[,,j] <- sapply(1:total_features, function(x) pdf_cdf_quant_margin(data[,x],marginal_fams[x,j],
                                                                        marginal_params[,x,j], 'cdf'))
-    if(is.matrix(final_vinestr)){
-      fit_rvine <- VineCopula::RVineCopSelect(u_data[data[,(total_features+1)] == j,,j], familyset=final_bicop,
-                                              Matrix=final_vinestr, trunclevel=final_trunclevel)
+                                                                       
+    trunc_lvl <- NA
+    if (!is.na(final_trunclevel)) trunc_lvl <- final_trunclevel
+                                                                       
+    u_data_cluster <- u_data[data[,(total_features+1)] == j,,j]
+    
+    if(is.matrix(final_vinestr) || inherits(final_vinestr, "rvine_structure")){
+      struct <- rvinecopulib::as_rvine_structure(final_vinestr)
+      fit_rvine <- rvinecopulib::vinecop(u_data_cluster, family_set = final_bicop_mapped,
+                                         structure = struct, trunc_lvl = trunc_lvl,
+                                         keep_data = FALSE, cores = 1)
     }else{
-      fit_rvine <- VineCopula::RVineStructureSelect(u_data[data[,(total_features+1)] == j,,j], familyset=final_bicop,
-                                                    type=final_cvine, trunclevel=final_trunclevel)
+      fit_rvine <- rvinecopulib::vinecop(u_data_cluster, family_set = final_bicop_mapped,
+                                         trunc_lvl = trunc_lvl, keep_data = FALSE, cores = 1)
     }
-    vine_structures[,,j] <- fit_rvine$Matrix
-    family_sets[,,j] <- fit_rvine$family
-    cop_params[,,j] <- fit_rvine$par
-    cop_params_2[,,j] <- fit_rvine$par2
-    has_one_par_0 <- apply(family_sets[,,j], 1, function(row) sum(row == 1))
-    has_one_par_1 <- apply(family_sets[,,j], 1, function(row) sum(row < 7 & row > 2))
-    has_one_par_2 <- apply(family_sets[,,j], 1, function(row) sum(row < 17 & row > 12))
-    has_one_par_3 <- apply(family_sets[,,j], 1, function(row) sum(row < 27 & row > 22))
-    has_one_par_4 <- apply(family_sets[,,j], 1, function(row) sum(row < 37 & row > 32))
-    has_two_par_0 <- apply(family_sets[,,j], 1, function(row) sum(row == 2))
-    has_two_par_1 <- apply(family_sets[,,j], 1, function(row) sum(row < 11 & row > 6))
-    has_two_par_2 <- apply(family_sets[,,j], 1, function(row) sum(row < 21 & row > 16))
-    has_two_par_3 <- apply(family_sets[,,j], 1, function(row) sum(row < 31 & row > 26))
-    has_two_par_4 <- apply(family_sets[,,j], 1, function(row) sum(row < 41 & row > 36))
-    one_par[j] <- sum(has_one_par_0) + sum(has_one_par_1) + sum(has_one_par_2) + sum(has_one_par_3) + sum(has_one_par_4)
-    two_par[j] <- sum(has_two_par_0) + sum(has_two_par_1) + sum(has_two_par_2) + sum(has_two_par_3) + sum(has_two_par_4)
+    
+    vine_models[[j]] <- fit_rvine
+    total_cop_pars <- total_cop_pars + fit_rvine$npars
+    
+    p(sprintf("Final section %d", j))
   }
+  
   data <- data[,1:total_features]
-  rvine_densities <-sapply(1:total_cluster, function(j) rvine_density(u_data[,,j], vine_structures[,,j], family_sets[,,j],
-                                                                      cop_params[,,j], cop_params_2[,,j]))
+  
+  u_data_safe <- pmax(pmin(u_data, 1 - 1e-10), 1e-10)
+  rvine_densities <- sapply(1:total_cluster, function(j) rvinecopulib::dvinecop(u_data_safe[,,j], vine_models[[j]]))
+  
   for(j in 1:total_cluster){
-    density <- rep(1, dim(margin_densities)[1])
     margin_densities[,,j]<-sapply(1:total_features, function(x) pdf_cdf_quant_margin(data[,x],marginal_fams[x,j],
                                                                                marginal_params[,x,j], 'pdf'))
-    for(t in 1:total_features){
-      density <- density * margin_densities[,t,j]
-    }
-    total_margin_dens[,j] <- density
   }
-  lik_points <-sapply(1:total_cluster, function(j) mix_probs[j]*total_margin_dens[,j]*rvine_densities[,j])
+  total_margin_dens <- sapply(1:total_cluster, function(j) apply(margin_densities[,,j], 1, prod))
+  lik_points <- sapply(1:total_cluster, function(j) mix_probs[j]*total_margin_dens[,j]*rvine_densities[,j])
+  
   lik_per_obs <- apply(lik_points, 1, sum)
-  z_values <- lik_points/rep(lik_per_obs, total_cluster)
+  z_values <- t(apply(lik_points, 1, function(row) row / sum(row)))
+  z_values[is.na(z_values)] <- 1 / total_cluster
   loglik <- sum(log(lik_per_obs))
+  
   total_mar_pars <- 0
   for(j in 1:total_cluster){
     for(i in 1:total_features){
@@ -84,7 +86,7 @@ final_selection <- function(data, total_cluster, final_cvine, final_vinestr, fin
       else{total_mar_pars <- total_mar_pars + 2}
     }
   }
-  total_cop_pars <- sum(one_par)+2*sum(two_par)
+  
   total_mix_pars <- total_cluster-1
   total_pars <- total_mar_pars + total_cop_pars + total_mix_pars
   bic_cop <- (-2)*loglik + log(total_obs)*total_pars
@@ -98,9 +100,9 @@ final_selection <- function(data, total_cluster, final_cvine, final_vinestr, fin
     icl <- bic_cop-2*const
   }
   else{icl <- bic_cop}
+  
   output <- list("loglik"=loglik, "bic"=bic_cop, "icl"=icl, "init_clustering"=init_method, "iteration"=iteration,
-                 "total_pars"=total_pars,"mixture_prob"=mix_probs, "margin" = marginal_fams,
-                 "marginal_param"=marginal_params, "vine_structure"=vine_structures, "bicop_familyset"=family_sets,
-                 "bicop_param"=cop_params, "bicop_param2"=cop_params_2, "z_values"=z_values)
+                 "total_pars"=total_pars, "mixture_prob"=mix_probs, "margin"=marginal_fams,
+                 "marginal_param"=marginal_params, "vine_models"=vine_models, "z_values"=z_values)
   output
 }

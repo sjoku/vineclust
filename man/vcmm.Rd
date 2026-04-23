@@ -33,7 +33,7 @@ before/after the ECM phase of clustering.
 
 \item{vinestr}{A matrix specifying vine tree structures before/after the ECM phase of clustering.
 The default is automatic selection.
-\link[VineCopula]{RVineMatrixCheck} checks for a valid R-vine matrix.}
+\link[rvinecopulib]{rvine_structure} checks for a valid R-vine matrix.}
 
 \item{trunclevel}{An integer showing the level of truncation for vine tree structures before the ECM phase of clustering.
 The default is 1.}
@@ -43,10 +43,11 @@ to be fitted before/after the ECM phase of clustering.
 The default is c('cauchy','gamma','llogis','lnorm','logis','norm','snorm','std', 'sstd').
 Other distributions not (yet) allowed.}
 
-\item{bicop}{A vector of integers denoting the parametric bivariate copula families to be fitted
+\item{bicop}{A vector of strings or integers denoting the bivariate copula families to be fitted
 before/after the ECM phase of clustering.
+You may use string assignments such as c("all"), c("parametric"), c("nonparametric"), or specific families like c("clayton", "gumbel"). Legacy integer vectors are also accepted and mapped correctly.
 The default is c(1,2,3,4,5,6,7,8,10,13,14,16,17,18,20,23,24,26,27,28,30,33,34,36,37,38,40).
-\link[VineCopula]{BiCop} describes the available families with their specifications.}
+\link[rvinecopulib]{bicop_dist} describes the available families with their specifications.}
 
 \item{methods}{A vector of character strings indicating initial clustering method(s) to have a partition
 for model selection before the ECM phase of clustering. Current options:
@@ -77,52 +78,25 @@ for a given number of components as described in Sahin and Czado (2021)
 and use its results for clustering.
 }
 \examples{
-# Simulate 3-dimensianal data from parametric vine copula based mixture model
-# with 2 components on x-scale. Each component has 500 observations.
-dims <- 3
-obs <- c(500,500)
-RVMs <- list()
-RVMs[[1]] <- VineCopula::RVineMatrix(Matrix=matrix(c(1,3,2,0,3,2,0,0,2),dims,dims),
-                        family=matrix(c(0,3,4,0,0,14,0,0,0),dims,dims),
-                        par=matrix(c(0,0.8571429,2.5,0,0,5,0,0,0),dims,dims),
-                        par2=matrix(sample(0, dims*dims, replace=TRUE),dims,dims))
-RVMs[[2]] <- VineCopula::RVineMatrix(Matrix=matrix(c(1,3,2,0,3,2,0,0,2), dims,dims),
-                        family=matrix(c(0,6,5,0,0,13,0,0,0), dims,dims),
-                        par=matrix(c(0,1.443813,11.43621,0,0,2,0,0,0),dims,dims),
-                        par2=matrix(sample(0, dims*dims, replace=TRUE),dims,dims))
-margin <- matrix(c('Normal', 'Gamma', 'Lognormal', 'Lognormal', 'Normal', 'Gamma'), 3, 2)
-margin_pars <- array(0, dim=c(2, 3, 2))
-margin_pars[,1,1] <- c(1, 2)
-margin_pars[,1,2] <- c(1.5, 0.4)
-margin_pars[,2,1] <- c(1, 0.2)
-margin_pars[,2,2] <- c(18, 5)
-margin_pars[,3,1] <- c(0.8, 0.8)
-margin_pars[,3,2] <- c(1, 0.2)
-x_data <- rvcmm(dims, obs, margin, margin_pars, RVMs)
-
-# Example-1: fit parametric 3 dimensional R-vine copula based mixture model with 2 components,
-# using all univariate marginal distributions and bivariate copula families allowed,
-# initial partition of k-means
 \dontrun{
-fit <- vcmm(x_data[,1:3], total_comp = 2)
-print(fit)
-summary(fit)
-table(x_data$comp_id, fit$cluster)
-# evaluate the density at (X1, X2, X3) = (1,2,3) for the fitted vcmm
-# after encoding fitted vine copula
-RVMs_fitted <- list()
-RVMs_fitted[[1]] <- VineCopula::RVineMatrix(Matrix=fit$output$vine_structure[,,1],
-                        family=fit$output$bicop_familyset[,,1],
-                        par=fit$output$bicop_param[,,1],
-                        par2=fit$output$bicop_param2[,,1])
-RVMs_fitted[[2]] <- VineCopula::RVineMatrix(Matrix=fit$output$vine_structure[,,2],
-                        family=fit$output$bicop_familyset[,,2],
-                        par=fit$output$bicop_param[,,2],
-                        par2=fit$output$bicop_param2[,,2])
-dvcmm(c(1, 2, 3), fit$output$margin, fit$output$marginal_param,
-RVMs_fitted, fit$output$mixture_prob)
-}
+# Example: fit parametric 4 dimensional vine copula based mixture model with 2 components
+# data from UCI Machine Learning Repository 
+data_wisc <- read.csv("http://archive.ics.uci.edu/ml/machine-learning-databases/breast-cancer-wisconsin/wdbc.data", header = FALSE)
 
+# Fit the model
+fit <- vcmm(data=data_wisc[,c(15,27,29,30)], total_comp=2, verbose=FALSE)
+
+# Display model statistics
+print(fit)
+
+# Extract vine tree structure information
+summary(fit)
+
+# Evaluate the density of the fitted model at a given point
+RVMs_fitted <- fit$output$vine_models
+dens <- dvcmm(c(2.747, 0.1467, 0.13, 0.05334), fit$output$margin, 
+              fit$output$marginal_param, RVMs_fitted, fit$output$mixture_prob)
+}
 }
 \references{
 Sahin and Czado (2021), Vine copula mixture models and clustering for non-Gaussian data, Econometrics and Statistics.

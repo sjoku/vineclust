@@ -3,17 +3,17 @@
 initial_clustering <- function(data, total_cluster, is_cvine, init_vinestr, init_trunclevel, init_mar,
                                init_bicop, clustering_method){
   if(is.na(is_cvine)) is_cvine <- 0
-  if(all(is.na(init_bicop))) {init_bicop <- c(1,2,3,4,5,6,7,8,10,13,14,16,17,18,
-                                              20,23,24,26,27,28,30,33,34,36,37,38,40)}
+  
+  init_bicop_mapped <- map_family(init_bicop)
+  
   total_features <- dim(data)[2]
   total_obs <- dim(data)[1]
   u_data_to_cluster <- list()
   data_to_cluster <- list()
   u_data <- array(0, dim=c(total_obs, total_features, total_cluster))
-  cop_params <- array(0, dim=c(total_features, total_features, total_cluster))
-  cop_params_2 <- array(0, dim=c(total_features, total_features, total_cluster))
-  family_sets <- array(0, dim=c(total_features, total_features, total_cluster))
-  vine_structures <- array(0, dim=c(total_features, total_features, total_cluster))
+  
+  vine_models <- list()
+  
   marginal_fams <- matrix(0,total_features, total_cluster)
   marginal_params <- array(0, dim=c(4, total_features, total_cluster))
   if(clustering_method == 'gmm'){
@@ -27,6 +27,10 @@ initial_clustering <- function(data, total_cluster, is_cvine, init_vinestr, init
     hcVVV_cl <- mclust::hclass(hcVVV_fit, total_cluster)
   }
   mix_probs <- vector()
+  
+  # if progressr is used higher up, this will signal progress
+  p <- progressr::progressor(steps = total_cluster)
+  
   for(j in 1:total_cluster){
     if(clustering_method == 'gmm'){
       data_to_cluster[[j]] <- data[gmm_fit$classification == j,]
@@ -53,49 +57,35 @@ initial_clustering <- function(data, total_cluster, is_cvine, init_vinestr, init
     }
     u_data[,,j] <- sapply(1:total_features, function(x) pdf_cdf_quant_margin(data[,x],marginal_fams[x,j],
                                                                        marginal_params[,x,j], 'cdf'))
+    
+    trunc_lvl <- NA
+    if (!is.na(init_trunclevel)) trunc_lvl <- init_trunclevel
+    
+    cluster_u_data <- NULL
     if(clustering_method == 'gmm'){
-      if(is.matrix(init_vinestr)){
-        fit_rvm <- VineCopula::RVineCopSelect(u_data[gmm_fit$classification == j,,j], familyset=init_bicop,
-                                              Matrix=init_vinestr, trunclevel=init_trunclevel)
-        vine_structures[,,j] <- init_vinestr
-      }
-      else{
-        fit_rvm <- VineCopula::RVineStructureSelect(u_data[gmm_fit$classification == j,,j], familyset=init_bicop,
-                                                    type=is_cvine, trunclevel=init_trunclevel)
-        vine_structures[,,j] <- fit_rvm$Matrix
-      }
+      cluster_u_data <- u_data[gmm_fit$classification == j,,j]
+    } else if(clustering_method == 'kmeans'){
+      cluster_u_data <- u_data[kmeans_fit$cluster == j,,j]
+    } else if(clustering_method == 'hcVVV'){
+      cluster_u_data <- u_data[hcVVV_cl == j,,j]
     }
-    if(clustering_method == 'kmeans'){
-      if(is.matrix(init_vinestr)){
-        fit_rvm <- VineCopula::RVineCopSelect(u_data[kmeans_fit$cluster == j,,j], familyset=init_bicop,
-                                              Matrix=init_vinestr, trunclevel=init_trunclevel)
-        vine_structures[,,j] <- init_vinestr
-      }
-      else{
-        fit_rvm <- VineCopula::RVineStructureSelect(u_data[kmeans_fit$cluster == j,,j], familyset=init_bicop,
-                                                    type=is_cvine, trunclevel=init_trunclevel)
-        vine_structures[,,j] <- fit_rvm$Matrix
-      }
+    
+    if(is.matrix(init_vinestr) || inherits(init_vinestr, "rvine_structure")){
+      struct <- rvinecopulib::as_rvine_structure(init_vinestr)
+      fit_rvm <- rvinecopulib::vinecop(cluster_u_data, family_set = init_bicop_mapped, 
+                                       structure = struct, trunc_lvl = trunc_lvl, 
+                                       keep_data = FALSE, cores = 1)
+    } else {
+      fit_rvm <- rvinecopulib::vinecop(cluster_u_data, family_set = init_bicop_mapped, 
+                                       trunc_lvl = trunc_lvl, keep_data = FALSE, cores = 1)
     }
-    if(clustering_method == 'hcVVV'){
-      if(is.matrix(init_vinestr)){
-        fit_rvm <- VineCopula::RVineCopSelect(u_data[hcVVV_cl == j,,j], familyset=init_bicop,
-                                              Matrix=init_vinestr, trunclevel=init_trunclevel)
-        vine_structures[,,j] <- init_vinestr
-      }
-      else{
-        fit_rvm <- VineCopula::RVineStructureSelect(u_data[hcVVV_cl == j,,j], familyset=init_bicop,
-                                                    type=is_cvine, trunclevel=init_trunclevel)
-        vine_structures[,,j] <- fit_rvm$Matrix
-      }
-    }
-    family_sets[,,j] <- fit_rvm$family
-    cop_params[,,j] <- fit_rvm$par
-    cop_params_2[,,j] <- fit_rvm$par2
+    
+    vine_models[[j]] <- fit_rvm
     mix_probs[j] <- length(data_to_cluster[[j]][,1])/total_obs
+    p(sprintf("Initial clustering (%s) component %d", clustering_method, j))
   }
+  
   result <- list("u_data"=u_data, "mix_probs"=mix_probs, "marginal_fams" = marginal_fams,
-                 "marginal_params"=marginal_params, "family_sets"=family_sets,
-                 "vine_structures"=vine_structures, "cop_params"=cop_params, "cop_params_2"=cop_params_2)
+                 "marginal_params"=marginal_params, "vine_models" = vine_models)
   result
 }

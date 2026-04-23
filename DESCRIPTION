@@ -18,7 +18,8 @@ BugReports: https://github.com/oezgesahin/vineclust/issues
 Depends:
   R (>= 3.1.0)
 Imports: 
-  VineCopula (>= 2.4.2),
+  rvinecopulib,
+  progressr,
   fGarch,
   future,
   future.apply,

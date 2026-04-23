@@ -2,10 +2,11 @@
 
 S3method(print,vcmm_res)
 S3method(summary,vcmm_res)
+S3method(predict,vcmm_res)
 export(dvcmm)
 export(rvcmm)
 export(vcmm)
-import(VineCopula)
+import(rvinecopulib)
 import(mclust)
 import(univariateML)
 importFrom(fGarch,dsnorm)
