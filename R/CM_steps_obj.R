@@ -94,12 +94,12 @@ CM_steps <- function(data, vine_model, z_value, marginal_fam, marginal_par, maxi
                                   trunc_lvl = trunc_lvl, threshold = tau_threshold,
                                   tree_criterion = "rho")
          }, error = function(e2) {
-            warning("rvinecopulib rho tree failed. Falling back to Independence copula.")
-            rvinecopulib::vinecop(udata, family_set = "indep", weights = z_value, keep_data = FALSE, cores = cores)
+            warning("rvinecopulib rho tree failed. Returning previous vine_model.")
+            vine_model
          })
        } else {
-         warning(paste("rvinecopulib crash:", e$message, "| Falling back to Independence copula."))
-         rvinecopulib::vinecop(udata, family_set = "indep", weights = z_value, keep_data = FALSE, cores = cores)
+         warning(paste("rvinecopulib crash:", e$message, "| Returning previous vine_model."))
+         vine_model
        }
      })
   } else {
@@ -118,12 +118,12 @@ CM_steps <- function(data, vine_model, z_value, marginal_fam, marginal_par, maxi
                                   trunc_lvl = trunc_lvl, threshold = tau_threshold,
                                   tree_criterion = "rho")
          }, error = function(e2) {
-            warning("rvinecopulib rho tree failed. Falling back to Independence copula.")
-            rvinecopulib::vinecop(udata, family_set = "indep", weights = z_value, keep_data = FALSE, cores = cores)
+            warning("rvinecopulib rho tree failed. Returning previous vine_model.")
+            vine_model
          })
        } else {
-         warning(paste("rvinecopulib crash:", e$message, "| Falling back to Independence copula."))
-         rvinecopulib::vinecop(udata, family_set = "indep", weights = z_value, keep_data = FALSE, cores = cores)
+         warning(paste("rvinecopulib crash:", e$message, "| Returning previous vine_model."))
+         vine_model
        }
      })
   }

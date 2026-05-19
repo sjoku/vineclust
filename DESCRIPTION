@@ -1,7 +1,7 @@
 Package: vineclust
 Type: Package
 Title: Model-Based Clustering with Vine Copulas via rvinecopulib
-Version: 0.2.13
+Version: 0.2.14
 Description: High-performance model-based clustering utilizing vine copula mixture models for continuous data.
     Migrated to 'rvinecopulib', this package leverages vectorized estimation algorithms for robust Expectation-Conditional 
     Maximization (ECM) operations and enables the integration of robust nonparametric pair-copulas alongside classic parametric sets.
