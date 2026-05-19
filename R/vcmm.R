@@ -28,15 +28,16 @@
 #' for model selection before the ECM phase of clustering. Current options:
 #' * 'kmeans' (default)
 #' * c('kmeans', 'gmm', 'hcVVV')
-#' @param threshold A numeric, stopping the ECM phase of clustering. The default is 1e-4.
-#' @param maxit An integer, specifying the maximum number of iterations in the CM-step 2 optimization. The default is 10.
-#' @param cores An integer, showing the number of cores to use for parallel computing.
-#' @param verbose A boolean indicating whether to log detailed debugging steps. Defaults to `FALSE`.
-#' @param burn_in_iters An integer specifying the number of initial iterations to perform full vine tree structure estimation before freezing it. Defaults to 5.
-#' @param trunc_lvl An integer showing the level of truncation for vine tree structures during the CM-steps. Defaults to 2.
-#' @param tau_threshold A numeric threshold for Kendall's tau below which pair-copulas are set to independence. Defaults to 0.1.
-#' @param batch_size An integer specifying the random sub-sample size for stochastic mini-batch EM. If NULL, uses the full dataset. Defaults to NULL.
-#' @param ema_alpha A numeric between 0 and 1 specifying the smoothing factor for Exponential Moving Average updates across batches. Defaults to 0.8.
+#' @param threshold A numeric representing the stopping criterion for the relative change in the smoothed log-likelihood. Defaults to 1e-4.
+#' @param maxit An integer specifying the maximum number of iterations for the L-BFGS-B optimization algorithm used to fit marginal parameters in the M-step. Defaults to 10.
+#' @param cores An integer indicating the number of OpenMP threads to use for fitting and evaluating pair-copula dependencies natively in C++. Defaults to 1.
+#' @param verbose A boolean indicating whether to log detailed debugging steps and algorithm progress. Defaults to `FALSE`.
+#' @param burn_in_iters An integer specifying the number of initial EM epochs to perform full Maximum Spanning Tree (MST) structure searches before freezing the tree topology. Freezing massively speeds up subsequent iterations. Defaults to 5.
+#' @param trunc_lvl An integer showing the maximum level of truncation for vine tree structures during the EM loop. Tree levels above this are forced to independence to speed up evaluation. Defaults to 2.
+#' @param tau_threshold A numeric threshold for Kendall's tau below which pair-copulas are automatically set to independence to prune weak correlations and optimize structural search. Defaults to 0.1.
+#' @param batch_size An integer specifying the random sub-sample size for Stochastic Mini-Batch EM. Dramatically accelerates training on massive datasets by decoupling execution time from total observations. If NULL, defaults to standard full-dataset EM. Defaults to NULL.
+#' @param ema_alpha A numeric between 0 and 1, or the string 'decay', specifying the learning rate for Exponential Moving Average (EMA) parameter updates across mini-batches. If 'decay', uses a `1/sqrt(t)` decaying learning rate to guarantee stochastic convergence. Defaults to "decay".
+#' @param max_iter An integer specifying the absolute maximum number of EM iterations to execute before forcing termination if the log-likelihood convergence threshold is not met. Defaults to 500.
 #'
 #' @return An object of class vcmm result. It contains the elements
 #' \describe{
@@ -259,7 +260,9 @@ vcmm <- function(data, total_comp, is_cvine=NA, vinestr=NA, trunclevel=1, mar=NA
            for(j in 1:total_comp){
               marginal_params[,,j] <- CMS[[j]]$marginal_par
               vine_models[[j]] <- CMS[[j]]$vine_model
-              u_data[,,j] <- CMS[[j]]$u_data
+              if (!use_batching) {
+                 u_data[,,j] <- CMS[[j]]$u_data
+              }
            }
         }
         
