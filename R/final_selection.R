@@ -75,10 +75,13 @@ final_selection <- function(data, total_cluster, final_cvine, final_vinestr, fin
     margin_densities[,,j] <- eval_all_margins_cpp(as.matrix(data), marginal_fams[,j], marginal_params[,,j], "pdf")
   }
   
+  margin_densities[margin_densities < 1e-300] <- 1e-300
+  rvine_densities[rvine_densities < 1e-300] <- 1e-300
+  
   log_lik_points <- matrix(0, nrow=total_obs, ncol=total_cluster)
   for(j in 1:total_cluster) {
-    log_m_dens <- rowSums(log(pmax(matrix(margin_densities[,,j], nrow=total_obs), 1e-300)))
-    log_c_dens <- log(pmax(rvine_densities[,j], 1e-300))
+    log_m_dens <- rowSums(log(matrix(margin_densities[,,j], nrow=total_obs)))
+    log_c_dens <- log(rvine_densities[,j])
     log_lik_points[,j] <- log(mix_probs[j]) + log_m_dens + log_c_dens
   }
   
