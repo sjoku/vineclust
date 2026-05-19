@@ -294,8 +294,9 @@ vcmm <- function(data, total_comp, is_cvine=NA, vinestr=NA, trunclevel=1, mar=NA
       z_values[z_values < 0] <- 0
       z_values[z_values > 1] <- 1
       
-      final_out <- final_selection(data, total_comp, final_cvine, final_vinestr, final_trunclevel, mix_probs, z_values,
-                                   iteration, method, final_mar, final_bicop, trunc_lvl, tau_threshold, cores)
+      loglik <- sum(max_log_lik + log(sum_exp))
+      
+      final_out <- final_selection(data, total_comp, mix_probs, z_values, iteration, method, marginal_fams, marginal_params, vine_models, loglik)
       
       vcmm_bic <- final_out$bic
       if(vcmm_bic < winner_bic){
