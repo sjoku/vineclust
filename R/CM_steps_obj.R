@@ -1,6 +1,6 @@
 #' internal function
 #' @noRd
-CM_step_mixture_probs <- function(z_values) apply(z_values, 2, mean)
+CM_step_mixture_probs <- function(z_values) colMeans(z_values)
 
 
 
@@ -9,6 +9,8 @@ CM_step_mixture_probs <- function(z_values) apply(z_values, 2, mean)
 CM_steps <- function(data, vine_model, z_value, marginal_fam, marginal_par, maxit, bicop_mapped, iteration, burn_in_iters, trunc_lvl, tau_threshold, cores = 1, global_min, global_max, global_sd){
   total_features <- dim(data)[2]
   
+  z_value[z_value < 1e-12] <- 0
+  
   if (sum(z_value) < 1e-8) {
       warning("Component weight near zero. Returning previous state to prevent crash.")
       udata <- eval_all_margins_cpp(as.matrix(data), marginal_fam, marginal_par, "cdf")
@@ -16,6 +18,8 @@ CM_steps <- function(data, vine_model, z_value, marginal_fam, marginal_par, maxi
       udata[udata > 1 - 1e-10] <- 1 - 1e-10
       return(list("marginal_par"=marginal_par, "vine_model"=vine_model, "u_data"=udata))
   }
+  
+  z_value <- z_value / sum(z_value)
   
   #CM-step 2
   for(p in 1:total_features){

@@ -134,9 +134,13 @@ vcmm <- function(data, total_comp, is_cvine=NA, vinestr=NA, trunclevel=1, mar=NA
         total_obs_batch <- length(batch_indices)
         
         # Calculate u_data on the fly for the batch to save memory/time
-        u_data_batch <- array(0, dim=c(total_obs_batch, total_features, total_comp))
-        for(j in 1:total_comp){
-          u_data_batch[,,j] <- eval_all_margins_cpp(data_batch, marginal_fams[,j], marginal_params[,,j], "cdf")
+        if (!use_batching) {
+          u_data_batch <- u_data
+        } else {
+          u_data_batch <- array(0, dim=c(total_obs_batch, total_features, total_comp))
+          for(j in 1:total_comp){
+            u_data_batch[,,j] <- eval_all_margins_cpp(data_batch, marginal_fams[,j], marginal_params[,,j], "cdf")
+          }
         }
         
         rvine_densities <- matrix(0, total_obs_batch, total_comp)
@@ -163,7 +167,10 @@ vcmm <- function(data, total_comp, is_cvine=NA, vinestr=NA, trunclevel=1, mar=NA
           log_lik_points[,j] <- log(mix_probs[j]) + log_m_dens + log_c_dens
         }
         
-        max_log_lik <- apply(log_lik_points, 1, max)
+        max_log_lik <- log_lik_points[, 1]
+        if (total_comp > 1) {
+          for(k in 2:total_comp) max_log_lik <- pmax(max_log_lik, log_lik_points[, k])
+        }
         exp_diff <- exp(log_lik_points - max_log_lik)
         sum_exp <- rowSums(exp_diff)
         
@@ -252,6 +259,7 @@ vcmm <- function(data, total_comp, is_cvine=NA, vinestr=NA, trunclevel=1, mar=NA
            for(j in 1:total_comp){
               marginal_params[,,j] <- CMS[[j]]$marginal_par
               vine_models[[j]] <- CMS[[j]]$vine_model
+              u_data[,,j] <- CMS[[j]]$u_data
            }
         }
         
@@ -286,7 +294,10 @@ vcmm <- function(data, total_comp, is_cvine=NA, vinestr=NA, trunclevel=1, mar=NA
         log_lik_points[,j] <- log(mix_probs[j]) + log_m_dens + log_c_dens
       }
       
-      max_log_lik <- apply(log_lik_points, 1, max)
+      max_log_lik <- log_lik_points[, 1]
+      if (total_comp > 1) {
+        for(k in 2:total_comp) max_log_lik <- pmax(max_log_lik, log_lik_points[, k])
+      }
       exp_diff <- exp(log_lik_points - max_log_lik)
       sum_exp <- rowSums(exp_diff)
       z_values <- exp_diff / sum_exp
@@ -302,7 +313,7 @@ vcmm <- function(data, total_comp, is_cvine=NA, vinestr=NA, trunclevel=1, mar=NA
       if(vcmm_bic < winner_bic){
         winner_bic <- vcmm_bic
         out <- final_out
-        vcmm_class <- apply(out$z_values,1,function(x) which(x==max(x)))
+        vcmm_class <- max.col(out$z_values, ties.method = "first")
       }
     }
   })
@@ -363,7 +374,10 @@ predict.vcmm_res <- function(object, newdata = NULL, ...) {
     log_lik_points[,j] <- log(object$output$mixture_prob[j]) + log_m_dens + log_c_dens
   }
   
-  max_log_lik <- apply(log_lik_points, 1, max)
-  class <- apply(log_lik_points, 1, function(x) which.max(x))
+  max_log_lik <- log_lik_points[, 1]
+  if (total_comp > 1) {
+    for(k in 2:total_comp) max_log_lik <- pmax(max_log_lik, log_lik_points[, k])
+  }
+  class <- max.col(log_lik_points, ties.method = "first")
   class
 }

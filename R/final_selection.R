@@ -23,7 +23,7 @@ final_selection <- function(data, total_cluster, mix_probs, z_values, iteration,
   total_mix_pars <- total_cluster-1
   total_pars <- total_mar_pars + total_cop_pars + total_mix_pars
   bic_cop <- (-2)*loglik + log(total_obs)*total_pars
-  class <- apply(z_values,1,function(x) which(x==max(x)))
+  class <- max.col(z_values, ties.method = "first")
   const <- 0
   if(length(unique(class)) == total_cluster){
     for(i in 1:total_obs){
