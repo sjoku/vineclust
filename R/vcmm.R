@@ -220,10 +220,12 @@ vcmm <- function(data, total_comp, is_cvine=NA, vinestr=NA, trunclevel=1, mar=NA
         #CM-step 1
         mix_probs_new <- CM_step_mixture_probs(z_values)
         
+        current_maxit <- if(iteration < actual_burn_in) 2 else maxit
+        
         #CM-step 2 and 3
         CMS <- lapply(1:total_comp, function(x) try(
           CM_steps(data_batch, vine_models[[x]], z_values[,x], marginal_fams[,x], marginal_params[,,x],
-                   maxit, final_bicop_mapped, iteration, actual_burn_in, trunc_lvl, tau_threshold, cores, global_min, global_max, global_sd),
+                   current_maxit, final_bicop_mapped, iteration, actual_burn_in, trunc_lvl, tau_threshold, cores, global_min, global_max, global_sd),
           silent = TRUE
         ))
         
@@ -352,13 +354,6 @@ predict.vcmm_res <- function(object, newdata = NULL, ...) {
   }
   
   max_log_lik <- apply(log_lik_points, 1, max)
-  exp_diff <- exp(log_lik_points - max_log_lik)
-  sum_exp <- rowSums(exp_diff)
-  z_values <- exp_diff / sum_exp
-  z_values[is.na(z_values)] <- 1 / total_comp
-  z_values[z_values < 0] <- 0
-  z_values[z_values > 1] <- 1
-  
-  class <- apply(z_values, 1, function(x) which.max(x))
+  class <- apply(log_lik_points, 1, function(x) which.max(x))
   class
 }
