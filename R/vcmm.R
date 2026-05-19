@@ -106,7 +106,7 @@ vcmm <- function(data, total_comp, is_cvine=NA, vinestr=NA, trunclevel=1, mar=NA
   
   progressr::with_progress({
     for(method in methods){
-      initial_out <- initial_clustering(data, total_comp, is_cvine, vinestr, trunc_lvl, mar, bicop, method, tau_threshold)
+      initial_out <- initial_clustering(data, total_comp, is_cvine, vinestr, trunc_lvl, mar, bicop, method, tau_threshold, trunc_lvl_param=trunc_lvl, cores=cores)
       marginal_params <- initial_out$marginal_params
       marginal_fams <- initial_out$marginal_fams
       u_data <- initial_out$u_data
@@ -295,7 +295,7 @@ vcmm <- function(data, total_comp, is_cvine=NA, vinestr=NA, trunclevel=1, mar=NA
       z_values[z_values > 1] <- 1
       
       final_out <- final_selection(data, total_comp, final_cvine, final_vinestr, final_trunclevel, mix_probs, z_values,
-                                   iteration, method, final_mar, final_bicop, trunc_lvl, tau_threshold)
+                                   iteration, method, final_mar, final_bicop, trunc_lvl, tau_threshold, cores)
       
       vcmm_bic <- final_out$bic
       if(vcmm_bic < winner_bic){

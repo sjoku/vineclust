@@ -1,7 +1,7 @@
 #' internal function
 #' @noRd
 final_selection <- function(data, total_cluster, final_cvine, final_vinestr, final_trunclevel, mix_probs, p_probs,
-                            iteration, init_method, final_mar, final_bicop, trunc_lvl_param, tau_threshold){
+                            iteration, init_method, final_mar, final_bicop, trunc_lvl_param, tau_threshold, cores = 1){
   if(is.na(final_cvine)) final_cvine <- 0
   if(is.na(final_trunclevel)) final_trunclevel <- ncol(data) - 1
   
@@ -51,11 +51,11 @@ final_selection <- function(data, total_cluster, final_cvine, final_vinestr, fin
     if(is.matrix(final_vinestr) || inherits(final_vinestr, "rvine_structure")){
       struct <- rvinecopulib::as_rvine_structure(final_vinestr)
       fit_rvine <- rvinecopulib::vinecop(u_data_cluster, family_set = final_bicop_mapped,
-                                         structure = struct, trunc_lvl = trunc_lvl,
-                                         keep_data = FALSE, cores = 1)
-    }else{
-      fit_rvine <- rvinecopulib::vinecop(u_data_cluster, family_set = final_bicop_mapped,
-                                         trunc_lvl = trunc_lvl, keep_data = FALSE, cores = 1)
+                                         structure = struct, trunc_lvl = trunc_lvl, 
+                                       keep_data = FALSE, cores = cores)
+    } else {
+      fit_rvine <- rvinecopulib::vinecop(u_data_cluster, family_set = final_bicop_mapped, 
+                                       trunc_lvl = trunc_lvl, keep_data = FALSE, cores = cores)
     }
     
     vine_models[[j]] <- fit_rvine

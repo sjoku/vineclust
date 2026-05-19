@@ -1,7 +1,7 @@
 #' internal function
 #' @noRd
 initial_clustering <- function(data, total_cluster, is_cvine, init_vinestr, init_trunclevel, init_mar,
-                               init_bicop, clustering_method, tau_threshold, trunc_lvl_param){
+                               init_bicop, clustering_method, tau_threshold, trunc_lvl_param, cores = 1){
   if(is.na(is_cvine)) is_cvine <- 0
   
   init_bicop_mapped <- map_family(init_bicop)
@@ -72,10 +72,10 @@ initial_clustering <- function(data, total_cluster, is_cvine, init_vinestr, init
       struct <- rvinecopulib::as_rvine_structure(init_vinestr)
       fit_rvm <- rvinecopulib::vinecop(cluster_u_data, family_set = init_bicop_mapped, 
                                        structure = struct, trunc_lvl = trunc_lvl, 
-                                       keep_data = FALSE, cores = 1)
+                                       keep_data = FALSE, cores = cores)
     } else {
       fit_rvm <- rvinecopulib::vinecop(cluster_u_data, family_set = init_bicop_mapped, 
-                                       trunc_lvl = trunc_lvl, keep_data = FALSE, cores = 1)
+                                       trunc_lvl = trunc_lvl, keep_data = FALSE, cores = cores)
     }
     
     vine_models[[j]] <- fit_rvm
