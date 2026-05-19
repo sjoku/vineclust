@@ -1,13 +1,21 @@
 RVMs <- list()
 dims <- 3
-RVMs[[1]] <- VineCopula::RVineMatrix(Matrix=matrix(c(1,3,2,0,3,2,0,0,2),dims,dims),
-                                     family=matrix(c(0,3,4,0,0,14,0,0,0),dims,dims),
-                                     par=matrix(c(0,0.5,2.5,0,0,5,0,0,0),dims,dims),
-                                     par2=matrix(sample(0, dims*dims, replace=TRUE),dims,dims))
-RVMs[[2]] <- VineCopula::RVineMatrix(Matrix=matrix(c(1,3,2,0,3,2,0,0,2), dims,dims),
-                                     family=matrix(c(0,6,5,0,0,13,0,0,0), dims,dims),
-                                     par=matrix(c(0,2,14,0,0,1,0,0,0),dims,dims),
-                                     par2=matrix(sample(0, dims*dims, replace=TRUE),dims,dims))
+RVMs[[1]] <- rvinecopulib::vinecop_dist(
+  pair_copulas = list(
+    list(rvinecopulib::bicop_dist(family = "clayton", rotation = 0, parameters = 0.5),
+         rvinecopulib::bicop_dist(family = "gumbel", rotation = 0, parameters = 2.5)),
+    list(rvinecopulib::bicop_dist(family = "gumbel", rotation = 180, parameters = 5))
+  ),
+  structure = rvinecopulib::dvine_structure(1:3)
+)
+RVMs[[2]] <- rvinecopulib::vinecop_dist(
+  pair_copulas = list(
+    list(rvinecopulib::bicop_dist(family = "joe", rotation = 0, parameters = 2),
+         rvinecopulib::bicop_dist(family = "frank", rotation = 0, parameters = 14)),
+    list(rvinecopulib::bicop_dist(family = "clayton", rotation = 180, parameters = 1))
+  ),
+  structure = rvinecopulib::dvine_structure(1:3)
+)
 margin <- matrix(c('Normal', 'Gamma', 'Lognormal', 'Lognormal', 'Normal', 'Student-t'), 3, 2)
 margin_pars <- array(0, dim=c(4, 3, 2))
 margin_pars[,1,1] <- c(1, 2, 0, 0)

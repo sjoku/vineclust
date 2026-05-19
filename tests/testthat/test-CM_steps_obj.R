@@ -14,19 +14,27 @@ test_that("CM-step 1 works", {
 
 
 test_that("CM-steps 2 and 3 work", {
-  fit <- CM_steps(data=x_data, vine_structure=matrix(c(1,2,0,2),2,2), family_set=matrix(c(0,1,0,0),2,2),
-                  cop_params_j=matrix(c(0,0.7,0,0),2,2), cop_params_2_j=matrix(0,2,2),
+  vine_model <- rvinecopulib::vinecop_dist(
+    pair_copulas = list(list(rvinecopulib::bicop_dist("gaussian", 0, 0.7))),
+    structure = rvinecopulib::dvine_structure(1:2)
+  )
+  global_min <- apply(x_data, 2, min)
+  global_max <- apply(x_data, 2, max)
+  global_sd <- apply(x_data, 2, sd)
+  
+  fit <- CM_steps(data=x_data, vine_model=vine_model,
                   z_value=c(rep(0.9, 120), rep(0.1, 80)),
                   marginal_fam=c('Normal', 'Skew Normal'),
-                  marginal_par=matrix(c(-9, 4.5, 0, 0, -3, 2, 4, 0), 4, 2), maxit=2)
+                  marginal_par=matrix(c(-9, 4.5, 0, 0, -3, 2, 4, 0), 4, 2), 
+                  maxit=10, bicop_mapped="all", iteration=1, burn_in_iters=5, trunc_lvl=2, tau_threshold=0.1, 
+                  cores=1, global_min=global_min, global_max=global_max, global_sd=global_sd)
   expect_identical(
     names(fit),
     c(
-      "marginal_par", "cop_param", "cop_param_2", "u_data"
+      "marginal_par", "vine_model", "u_data"
     )
   )
   expect_type(fit$marginal_par, "double")
-  expect_type(fit$cop_param, "double")
-  expect_type(fit$cop_param_2, "double")
+  expect_s3_class(fit$vine_model, "vinecop_dist")
   expect_type(fit$u_data, "double")
 })

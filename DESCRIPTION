@@ -1,7 +1,7 @@
 Package: vineclust
 Type: Package
 Title: Model-Based Clustering with Vine Copulas via rvinecopulib
-Version: 0.2.0
+Version: 0.2.12
 Description: High-performance model-based clustering utilizing vine copula mixture models for continuous data.
     Migrated to 'rvinecopulib', this package leverages vectorized estimation algorithms for robust Expectation-Conditional 
     Maximization (ECM) operations and enables the integration of robust nonparametric pair-copulas alongside classic parametric sets.
@@ -22,17 +22,20 @@ BugReports: https://github.com/oezgesahin/vineclust/issues
 Depends:
   R (>= 3.5.0)
 Imports: 
-  rvinecopulib,
-  progressr,
-  fGarch,
-  future,
-  future.apply,
-  univariateML,
-  stats,
-  mclust
+    rvinecopulib,
+    progressr,
+    fGarch,
+    future,
+    future.apply,
+    univariateML,
+    stats,
+    mclust,
+    Rcpp
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.2.3
+RoxygenNote: 7.3.3
 License: GPL (>= 3)
 Suggests: 
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
+LinkingTo: 
+    Rcpp

@@ -32,6 +32,11 @@
 #' @param maxit An integer, specifying the maximum number of iterations in the CM-step 2 optimization. The default is 10.
 #' @param cores An integer, showing the number of cores to use for parallel computing.
 #' @param verbose A boolean indicating whether to log detailed debugging steps. Defaults to `FALSE`.
+#' @param burn_in_iters An integer specifying the number of initial iterations to perform full vine tree structure estimation before freezing it. Defaults to 5.
+#' @param trunc_lvl An integer showing the level of truncation for vine tree structures during the CM-steps. Defaults to 2.
+#' @param tau_threshold A numeric threshold for Kendall's tau below which pair-copulas are set to independence. Defaults to 0.1.
+#' @param batch_size An integer specifying the random sub-sample size for stochastic mini-batch EM. If NULL, uses the full dataset. Defaults to NULL.
+#' @param ema_alpha A numeric between 0 and 1 specifying the smoothing factor for Exponential Moving Average updates across batches. Defaults to 0.8.
 #'
 #' @return An object of class vcmm result. It contains the elements
 #' \describe{
@@ -79,8 +84,10 @@
 #' @importFrom stats dgamma dlnorm dlogis dnorm dcauchy kmeans optim pgamma plnorm plogis pnorm pcauchy sd
 
 vcmm <- function(data, total_comp, is_cvine=NA, vinestr=NA, trunclevel=1, mar=NA, bicop=NA,
-                 methods=c('kmeans'),  threshold=0.0001, maxit=10, cores=1, verbose=FALSE){
+                 methods=c('kmeans'),  threshold=0.0001, maxit=10, cores=1, verbose=FALSE,
+                 burn_in_iters=5, trunc_lvl=2, tau_threshold=0.1, batch_size=NULL, ema_alpha="decay", max_iter=500){
   initial_df_check(data)
+  data <- as.matrix(data)
   initial_args_check(data, total_comp, is_cvine, vinestr, trunclevel, mar, bicop,
                      methods, threshold, maxit, cores)
   final_cvine <- is_cvine
@@ -90,21 +97,16 @@ vcmm <- function(data, total_comp, is_cvine=NA, vinestr=NA, trunclevel=1, mar=NA
   final_bicop <- bicop
   final_bicop_mapped <- map_family(bicop)
   winner_bic <- 1000000
-  use_future <- cores > 1 && total_comp > 1
-  if(use_future){
-    old_plan <- future::plan()
-    on.exit(future::plan(old_plan), add = TRUE)
-    if(.Platform$OS.type == "windows"){
-      future::plan(future::multisession, workers = min(cores, total_comp))
-    }
-    else{
-      future::plan(future::multicore, workers = min(cores, total_comp))
-    }
-  }
+
+  
+  global_min <- apply(data, 2, min)
+  global_max <- apply(data, 2, max)
+  global_sd <- apply(data, 2, sd)
+  global_sd[global_sd < sqrt(.Machine$double.eps)] <- sqrt(.Machine$double.eps)
   
   progressr::with_progress({
     for(method in methods){
-      initial_out <- initial_clustering(data, total_comp, is_cvine, vinestr, trunclevel, mar, bicop, method)
+      initial_out <- initial_clustering(data, total_comp, is_cvine, vinestr, trunc_lvl, mar, bicop, method, tau_threshold)
       marginal_params <- initial_out$marginal_params
       marginal_fams <- initial_out$marginal_fams
       u_data <- initial_out$u_data
@@ -114,74 +116,116 @@ vcmm <- function(data, total_comp, is_cvine=NA, vinestr=NA, trunclevel=1, mar=NA
       total_features <- dim(data)[2]
       iteration <- 1
       loglik_res <- vector()
+      smoothed_loglik_res <- vector()
       cond <- TRUE
       
       p_ecm <- progressr::progressor(steps = 1)
       
+      prev_marginal_params <- NULL
+      prev_vine_models <- NULL
+      prev_mix_probs <- NULL
+
+      use_batching <- !is.null(batch_size) && batch_size < total_obs
+      actual_burn_in <- if(use_batching) max(burn_in_iters, ceiling(total_obs / batch_size) * 2) else burn_in_iters
+
       while(cond==TRUE){
-        rvine_densities <- matrix(0, total_obs, total_comp)
+        batch_indices <- if(use_batching) sample(1:total_obs, batch_size, replace = FALSE) else 1:total_obs
+        data_batch <- data[batch_indices, , drop=FALSE]
+        total_obs_batch <- length(batch_indices)
         
-        # Avoid 1/0 boundary evaluation problems for rvinecopulib
-        u_data_safe <- pmax(pmin(u_data, 1 - 1e-10), 1e-10)
-        
-        rvine_densities <- sapply(1:total_comp, function(j) rvinecopulib::dvinecop(u_data_safe[,,j], vine_models[[j]]))
-        
-        margin_densities <- array(0, dim=c(total_obs, total_features, total_comp))
+        # Calculate u_data on the fly for the batch to save memory/time
+        u_data_batch <- array(0, dim=c(total_obs_batch, total_features, total_comp))
         for(j in 1:total_comp){
-          margin_densities[,,j] <- sapply(1:total_features, function(x) pdf_cdf_quant_margin(data[,x],marginal_fams[x,j],
-                                                                                           marginal_params[,x,j], 'pdf'))
+          u_data_batch[,,j] <- eval_all_margins_cpp(data_batch, marginal_fams[,j], marginal_params[,,j], "cdf")
         }
         
-        # Vectorized prod
-        total_margin_dens <- sapply(1:total_comp, function(j) apply(margin_densities[,,j], 1, prod))
+        rvine_densities <- matrix(0, total_obs_batch, total_comp)
         
-        lik_points <- sapply(1:total_comp, function(j) mix_probs[j]*total_margin_dens[,j]*rvine_densities[,j])
-        lik_per_obs <- apply(lik_points, 1, sum)
-        lik_per_obs[which(lik_per_obs == 0 | is.na(lik_per_obs))] <- 1e-100
-        loglik <- sum(log(lik_per_obs))
+        # Avoid 1/0 boundary evaluation problems for rvinecopulib
+        u_data_safe <- u_data_batch
+        u_data_safe[u_data_safe < 1e-10] <- 1e-10
+        u_data_safe[u_data_safe > 1 - 1e-10] <- 1 - 1e-10
+        
+        rvine_densities <- sapply(1:total_comp, function(j) rvinecopulib::dvinecop(u_data_safe[,,j], vine_models[[j]], cores=cores))
+        
+        margin_densities <- array(0, dim=c(total_obs_batch, total_features, total_comp))
+        for(j in 1:total_comp){
+          margin_densities[,,j] <- eval_all_margins_cpp(data_batch, marginal_fams[,j], marginal_params[,,j], "pdf")
+        }
+        
+        log_lik_points <- matrix(0, nrow=total_obs_batch, ncol=total_comp)
+        for(j in 1:total_comp) {
+          log_m_dens <- rowSums(log(pmax(matrix(margin_densities[,,j], nrow=total_obs_batch), 1e-300)))
+          log_c_dens <- log(pmax(rvine_densities[,j], 1e-300))
+          log_lik_points[,j] <- log(mix_probs[j]) + log_m_dens + log_c_dens
+        }
+        
+        max_log_lik <- apply(log_lik_points, 1, max)
+        exp_diff <- exp(log_lik_points - max_log_lik)
+        sum_exp <- rowSums(exp_diff)
+        
+        lik_per_obs <- max_log_lik + log(sum_exp)
+        loglik <- sum(lik_per_obs)
+        if (use_batching) loglik <- loglik * (total_obs / total_obs_batch)
         loglik_res[iteration] <- loglik
         
-        if (verbose) message(sprintf("Method %s | ECM iteration %d | logLik %.4f", method, iteration, loglik))
+        # Calculate dynamic alpha if decaying
+        if (use_batching) {
+            current_alpha <- if (is.numeric(ema_alpha)) ema_alpha else (iteration + 5)^(-0.6)
+        } else {
+            current_alpha <- 1.0 # Full batch EM overrides EMA and uses exactly 100% of the new iteration
+        }
+        
+        if (iteration == 1) {
+          smoothed_loglik_res[iteration] <- loglik
+        } else {
+          smoothed_loglik_res[iteration] <- (1 - current_alpha) * smoothed_loglik_res[iteration-1] + current_alpha * loglik
+        }
+        
+        if (verbose) {
+           if (use_batching) {
+               message(sprintf("Method %s | ECM iteration %d | smoothed batch logLik %.4f", method, iteration, smoothed_loglik_res[iteration]))
+           } else {
+               message(sprintf("Method %s | ECM iteration %d | logLik %.4f", method, iteration, loglik))
+           }
+        }
         p_ecm(sprintf("Method %s: ECM Iteration %d (logLik %.4f)", method, iteration, loglik), amount = 0)
         
-        if(iteration > 2){
-          if ((abs(loglik_res[iteration]-loglik_res[iteration-1])/abs(loglik_res[iteration-1])) <= threshold){
+        patience <- if (use_batching) 10 else 1
+        min_iters_required <- if (use_batching) max(actual_burn_in + patience, ceiling(total_obs / batch_size)) else 2
+        
+        if (iteration > min_iters_required) {
+          loglik_to_check <- if(use_batching) smoothed_loglik_res else loglik_res
+          if ((abs(loglik_to_check[iteration] - loglik_to_check[iteration - patience]) / abs(loglik_to_check[iteration - patience])) <= threshold){
             cond <- FALSE
             p_ecm("Converged!", amount = 1)
             break
           }
         }
         
-        if (iteration >= 500) {
+        if (iteration >= max_iter) {
            cond <- FALSE
            p_ecm(sprintf("Max Iterations Reached (%d)", iteration), amount = 1)
-           warning("ECM algorithm reached maximum permitted 500 iterations without convergence")
+           warning(sprintf("ECM algorithm reached maximum permitted %d iterations without convergence", max_iter))
            break
         }
         
         #E-step
-        z_values <- t(apply(lik_points, 1, function(row) row / sum(row)))
+        z_values <- exp_diff / sum_exp
         z_values[is.na(z_values)] <- 1 / total_comp
+        z_values[z_values < 0] <- 0
+        z_values[z_values > 1] <- 1
         
         #CM-steps:
         #CM-step 1
-        mix_probs <- CM_step_mixture_probs(z_values)
+        mix_probs_new <- CM_step_mixture_probs(z_values)
         
         #CM-step 2 and 3
-        if(use_future){
-          CMS <- future.apply::future_lapply(1:total_comp, function(x) try(
-            CM_steps(data, vine_models[[x]], z_values[,x], marginal_fams[,x], marginal_params[,,x],
-                     maxit, final_bicop_mapped),
-            silent = TRUE
-          ), future.scheduling = 1)
-        }
-        else{
-          CMS <- lapply(1:total_comp, function(x) try(
-            CM_steps(data, vine_models[[x]], z_values[,x], marginal_fams[,x], marginal_params[,,x],
-                     maxit, final_bicop_mapped),
-            silent = TRUE
-          ))
-        }
+        CMS <- lapply(1:total_comp, function(x) try(
+          CM_steps(data_batch, vine_models[[x]], z_values[,x], marginal_fams[,x], marginal_params[,,x],
+                   maxit, final_bicop_mapped, iteration, actual_burn_in, trunc_lvl, tau_threshold, cores, global_min, global_max, global_sd),
+          silent = TRUE
+        ))
         
         failed_components <- which(vapply(CMS, inherits, logical(1), "try-error"))
         if(length(failed_components) > 0){
@@ -192,18 +236,58 @@ vcmm <- function(data, total_comp, is_cvine=NA, vinestr=NA, trunclevel=1, mar=NA
                paste(unique(failure_messages), collapse = " | "))
         }
         
-        for(j in 1:total_comp){
-          marginal_params[,,j] <- CMS[[j]]$marginal_par
-          vine_models[[j]] <- CMS[[j]]$vine_model
-          u_data[,,j] <- CMS[[j]]$u_data
+        if (use_batching && iteration > 1) {
+           mix_probs <- (1 - current_alpha) * prev_mix_probs + current_alpha * mix_probs_new
+           for(j in 1:total_comp) {
+              marginal_params[,,j] <- (1 - current_alpha) * prev_marginal_params[,,j] + current_alpha * CMS[[j]]$marginal_par
+              vine_models[[j]] <- CMS[[j]]$vine_model
+           }
+        } else {
+           mix_probs <- mix_probs_new
+           for(j in 1:total_comp){
+              marginal_params[,,j] <- CMS[[j]]$marginal_par
+              vine_models[[j]] <- CMS[[j]]$vine_model
+           }
         }
+        
+        prev_mix_probs <- mix_probs
+        prev_marginal_params <- marginal_params
+        prev_vine_models <- vine_models
         iteration <- iteration + 1
       }
       
       iteration <- iteration - 1
-      mix_probs <- CM_step_mixture_probs(z_values)
+      
+      # For final selection, calculate full u_data and z_values
+      u_data <- array(0, dim=c(total_obs, total_features, total_comp))
+      for(j in 1:total_comp){
+         u_data[,,j] <- eval_all_margins_cpp(data, marginal_fams[,j], marginal_params[,,j], "cdf")
+      }
+      u_data_safe <- u_data
+      u_data_safe[u_data_safe < 1e-10] <- 1e-10
+      u_data_safe[u_data_safe > 1 - 1e-10] <- 1 - 1e-10
+      rvine_densities <- sapply(1:total_comp, function(j) rvinecopulib::dvinecop(u_data_safe[,,j], vine_models[[j]], cores=cores))
+      margin_densities <- array(0, dim=c(total_obs, total_features, total_comp))
+      for(j in 1:total_comp){
+         margin_densities[,,j] <- eval_all_margins_cpp(data, marginal_fams[,j], marginal_params[,,j], "pdf")
+      }
+      log_lik_points <- matrix(0, nrow=total_obs, ncol=total_comp)
+      for(j in 1:total_comp) {
+        log_m_dens <- rowSums(log(pmax(matrix(margin_densities[,,j], nrow=total_obs), 1e-300)))
+        log_c_dens <- log(pmax(rvine_densities[,j], 1e-300))
+        log_lik_points[,j] <- log(mix_probs[j]) + log_m_dens + log_c_dens
+      }
+      
+      max_log_lik <- apply(log_lik_points, 1, max)
+      exp_diff <- exp(log_lik_points - max_log_lik)
+      sum_exp <- rowSums(exp_diff)
+      z_values <- exp_diff / sum_exp
+      z_values[is.na(z_values)] <- 1 / total_comp
+      z_values[z_values < 0] <- 0
+      z_values[z_values > 1] <- 1
+      
       final_out <- final_selection(data, total_comp, final_cvine, final_vinestr, final_trunclevel, mix_probs, z_values,
-                                   iteration, method, final_mar, final_bicop)
+                                   iteration, method, final_mar, final_bicop, trunc_lvl, tau_threshold)
       
       vcmm_bic <- final_out$bic
       if(vcmm_bic < winner_bic){
@@ -252,22 +336,28 @@ predict.vcmm_res <- function(object, newdata = NULL, ...) {
   u_data <- array(0, dim=c(total_obs, total_features, total_comp))
   
   for(j in 1:total_comp){
-    u_data[,,j] <- sapply(1:total_features, function(i) pdf_cdf_quant_margin(newdata[,i], object$output$margin[i,j],
-                                                                             object$output$marginal_param[,i,j], 'cdf'))
-    margin_densities[,,j] <- sapply(1:total_features, function(i) pdf_cdf_quant_margin(newdata[,i], object$output$margin[i,j],
-                                                                                       object$output$marginal_param[,i,j], 'pdf'))
-    u_data_safe <- pmax(pmin(u_data[,,j], 1 - 1e-10), 1e-10)
+    u_data[,,j] <- eval_all_margins_cpp(newdata, object$output$margin[,j], object$output$marginal_param[,,j], "cdf")
+    margin_densities[,,j] <- eval_all_margins_cpp(newdata, object$output$margin[,j], object$output$marginal_param[,,j], "pdf")
+    u_data_safe <- u_data[,,j]
+    u_data_safe[u_data_safe < 1e-10] <- 1e-10
+    u_data_safe[u_data_safe > 1 - 1e-10] <- 1 - 1e-10
     rvine_densities[,j] <- rvinecopulib::dvinecop(u_data_safe, object$output$vine_models[[j]])
   }
   
-  lik_points <- sapply(1:total_comp, function(j) object$output$mixture_prob[j] * apply(margin_densities[,,j, drop=FALSE], 1, prod) * rvine_densities[,j])
-  
-  if (total_obs == 1) {
-    lik_points <- matrix(lik_points, nrow=1)
+  log_lik_points <- matrix(0, nrow=total_obs, ncol=total_comp)
+  for(j in 1:total_comp) {
+    log_m_dens <- rowSums(log(pmax(matrix(margin_densities[,,j], nrow=total_obs), 1e-300)))
+    log_c_dens <- log(pmax(rvine_densities[,j], 1e-300))
+    log_lik_points[,j] <- log(object$output$mixture_prob[j]) + log_m_dens + log_c_dens
   }
   
-  z_values <- t(apply(lik_points, 1, function(row) row / sum(row)))
+  max_log_lik <- apply(log_lik_points, 1, max)
+  exp_diff <- exp(log_lik_points - max_log_lik)
+  sum_exp <- rowSums(exp_diff)
+  z_values <- exp_diff / sum_exp
   z_values[is.na(z_values)] <- 1 / total_comp
+  z_values[z_values < 0] <- 0
+  z_values[z_values > 1] <- 1
   
   class <- apply(z_values, 1, function(x) which.max(x))
   class

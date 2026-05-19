@@ -14,6 +14,7 @@
 #'
 #' @return `dvcmm()` returns the density, and `rvcmm()` returns random deviates.
 #'
+#' @examples
 #' \dontrun{
 #' # Generate data with 3 variables from a vine copula based mixture model
 #' # with 2 components, the first/second component has 300/600 observations.
@@ -48,6 +49,7 @@ dvcmm <- function(x, margin, margin_pars, RVMs, mix_probs){
     x <- matrix(x, 1, total_features)
   }
   else{total_obs <- dim(x)[1]}
+  x <- as.matrix(x)
   rvine_densities <- matrix(0, total_obs, total_comp)
   total_margin_dens <- matrix(0, total_obs, total_comp)
   margin_densities <- array(0, dim=c(total_obs, total_features, total_comp))
@@ -59,20 +61,19 @@ dvcmm <- function(x, margin, margin_pars, RVMs, mix_probs){
       stop("`vineclust` has been migrated to `rvinecopulib`. Please supply `vinecop_dist` objects instead of `VineCopula::RVineMatrix`.")
     }
     density <- rep(1, total_obs)
-    u_data[,,j] <- sapply(1:total_features, function(i) pdf_cdf_quant_margin(x[,i],margin[i,j],
-                                                                             margin_pars[,i,j], 'cdf'))
-    margin_densities[,,j] <- sapply(1:total_features, function(i) pdf_cdf_quant_margin(x[,i],margin[i,j],
-                                                                                       margin_pars[,i,j], 'pdf'))
-    for(t in 1:total_features){
-      density <- density * margin_densities[,t,j]
-    }
-    total_margin_dens[,j] <- density
-    u_data_safe <- pmax(pmin(u_data[,,j], 1 - 1e-10), 1e-10)
+    u_data[,,j] <- eval_all_margins_cpp(x[,1:total_features, drop=FALSE], margin[,j], margin_pars[,,j], "cdf")
+    margin_densities[,,j] <- eval_all_margins_cpp(x[,1:total_features, drop=FALSE], margin[,j], margin_pars[,,j], "pdf")
+    total_margin_dens[,j] <- exp(rowSums(log(matrix(margin_densities[,,j], nrow=total_obs))))
+    u_data_safe <- u_data[,,j]
+    u_data_safe[u_data_safe < 1e-10] <- 1e-10
+    u_data_safe[u_data_safe > 1 - 1e-10] <- 1 - 1e-10
     rvine_densities[,j] <- rvinecopulib::dvinecop(u_data_safe, RVM)
   }
   lik_points <- sapply(1:total_comp, function(j) mix_probs[j]*total_margin_dens[,j]*rvine_densities[,j])
-  if(dim(x)[1] == 1){lik_per_obs <- sum(lik_points)}
-  else{lik_per_obs <- apply(lik_points, 1, sum)}
+  if(dim(x)[1] == 1){
+    lik_points <- matrix(lik_points, nrow=1)
+  }
+  lik_per_obs <- rowSums(lik_points)
   lik_per_obs
 }
 
@@ -83,6 +84,7 @@ dvcmm <- function(x, margin, margin_pars, RVMs, mix_probs){
 
 rvcmm <- function(dims, obs, margin, margin_pars, RVMs){
   mar_RVM_check(margin, margin_pars, RVMs)
+  if(dims != dim(margin)[1]) stop("dims must match the number of marginal distributions")
   sim_args_check(dims, obs, margin, margin_pars, RVMs)
   total_comp <- length(obs)
   total_obs <- sum(obs)
@@ -93,10 +95,8 @@ rvcmm <- function(dims, obs, margin, margin_pars, RVMs){
     if (inherits(RVM, "RVineMatrix")) {
       stop("`vineclust` has been migrated to `rvinecopulib`. Please supply `vinecop_dist` objects instead of `VineCopula::RVineMatrix`.")
     }
-    u_data <- rvinecopulib::rvinecop(obs[component], RVM)
-    x_data_mtr <- matrix(0, obs[component], dims)
-    x_data_mtr <- sapply(1:dims, function(x) pdf_cdf_quant_margin(u_data[,x],margin[x,component],
-                                                                            margin_pars[,x,component], 'quant'))
+    u_data <- as.matrix(rvinecopulib::rvinecop(obs[component], RVM))
+    x_data_mtr <- eval_all_margins_cpp(u_data, margin[,component], margin_pars[,,component], "quant")
     data_to_cluster[row:(obs[component]+row-1),1:dims] <- x_data_mtr
     data_to_cluster[row:(obs[component]+row-1),dims+1] <- rep(component, obs[component])
     row <- row + obs[component]

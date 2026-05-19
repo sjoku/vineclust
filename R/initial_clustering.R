@@ -1,7 +1,7 @@
 #' internal function
 #' @noRd
 initial_clustering <- function(data, total_cluster, is_cvine, init_vinestr, init_trunclevel, init_mar,
-                               init_bicop, clustering_method){
+                               init_bicop, clustering_method, tau_threshold, trunc_lvl_param){
   if(is.na(is_cvine)) is_cvine <- 0
   
   init_bicop_mapped <- map_family(init_bicop)
@@ -33,41 +33,39 @@ initial_clustering <- function(data, total_cluster, is_cvine, init_vinestr, init
   
   for(j in 1:total_cluster){
     if(clustering_method == 'gmm'){
-      data_to_cluster[[j]] <- data[gmm_fit$classification == j,]
+      data_to_cluster[[j]] <- data[gmm_fit$classification == j,, drop=FALSE]
     }
     if(clustering_method == 'kmeans'){
-      data_to_cluster[[j]] <- data[kmeans_fit$cluster == j,]
+      data_to_cluster[[j]] <- data[kmeans_fit$cluster == j,, drop=FALSE]
     }
     if(clustering_method == 'hcVVV'){
-      data_to_cluster[[j]] <- data[hcVVV_cl == j,]
+      data_to_cluster[[j]] <- data[hcVVV_cl == j,, drop=FALSE]
+    }
+    if(nrow(data_to_cluster[[j]]) < 5){
+      data_to_cluster[[j]] <- data
     }
     for(i in 1:total_features){
       min_value <- min(data_to_cluster[[j]][,i])
       model_margin <- fit_margin(data_to_cluster[[j]][,i], min_value, init_mar)
       marginal_fams[i,j] <- model_margin$fam
-      marginal_params[1,i,j] <- model_margin$par_mar[1]
-      marginal_params[2,i,j] <- model_margin$par_mar[2]
-      if(model_margin$fam=='Skew Normal' || model_margin$fam=='Student-t'){
-        marginal_params[3,i,j] <- model_margin$par_mar[3]
-        }
-      if(model_margin$fam=='Skew Student-t'){
-        marginal_params[3,i,j] <- model_margin$par_mar[3]
-        marginal_params[4,i,j] <- model_margin$par_mar[4]
-      }
+      n_pars <- length(model_margin$par_mar)
+      marginal_params[1:n_pars,i,j] <- model_margin$par_mar
     }
-    u_data[,,j] <- sapply(1:total_features, function(x) pdf_cdf_quant_margin(data[,x],marginal_fams[x,j],
-                                                                       marginal_params[,x,j], 'cdf'))
+    u_data[,,j] <- eval_all_margins_cpp(as.matrix(data), marginal_fams[,j], marginal_params[,,j], "cdf")
     
     trunc_lvl <- NA
     if (!is.na(init_trunclevel)) trunc_lvl <- init_trunclevel
     
     cluster_u_data <- NULL
     if(clustering_method == 'gmm'){
-      cluster_u_data <- u_data[gmm_fit$classification == j,,j]
+      cluster_u_data <- matrix(u_data[gmm_fit$classification == j,,j], ncol=total_features)
     } else if(clustering_method == 'kmeans'){
-      cluster_u_data <- u_data[kmeans_fit$cluster == j,,j]
+      cluster_u_data <- matrix(u_data[kmeans_fit$cluster == j,,j], ncol=total_features)
     } else if(clustering_method == 'hcVVV'){
-      cluster_u_data <- u_data[hcVVV_cl == j,,j]
+      cluster_u_data <- matrix(u_data[hcVVV_cl == j,,j], ncol=total_features)
+    }
+    if(nrow(cluster_u_data) < 5){
+      cluster_u_data <- u_data[,,j]
     }
     
     if(is.matrix(init_vinestr) || inherits(init_vinestr, "rvine_structure")){

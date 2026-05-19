@@ -6,3 +6,5 @@
 ^docs$
 ^\.github/workflows/R-CMD-check\.yaml$
 ^codecov\.yml$
+^.*\.rds$
+^.*\.csv$

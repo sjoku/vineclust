@@ -157,7 +157,7 @@ fit_margin <- function(data, min_value, margin_fam){
   min_value <- min(data)
   all_fams <- c('norm', 'logis', 'gamma', 'lnorm', 'llogis', 'cauchy')
   positive_support_fams <- c('gamma', 'lnorm', 'llogis')
-  use_all_fams <- length(margin_fam) == 1 && is.na(margin_fam)
+  use_all_fams <- length(margin_fam) == 1 && (is.na(margin_fam) || margin_fam == "all")
   requested_fams <- character(0)
   if(!use_all_fams){
     requested_fams <- unique(as.character(margin_fam[!is.na(margin_fam)]))
@@ -196,6 +196,7 @@ fit_margin <- function(data, min_value, margin_fam){
                         error = function(e) NULL)
     if(!is.null(uML_fit) && is.finite(attr(uML_fit, 'logLik'))){
       fam <- attr(uML_fit, 'model')
+      fam <- switch(fam, 'norm'='Normal', 'logis'='Logistic', 'gamma'='Gamma', 'lnorm'='Lognormal', 'llogis'='Loglogistic', 'cauchy'='Cauchy', fam)
       par_mar <- regularize_margin_params(fam, as.numeric(uML_fit), scale_floor)
       bic_win <- -2 * attr(uML_fit, 'logLik') + log(length(data)) * length(par_mar)
     }

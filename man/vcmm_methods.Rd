@@ -20,7 +20,7 @@ as given in \code{\link{vcmm}}. Rows correspond to variable, columns correspond 
 \item{margin_pars}{An array, specifying the univariate marginal distributions' parameters in each component.
 First, second, third dimensions specify the parameter, variable, component, respectively.}
 
-\item{RVMs}{A list, containing the R-vine copula model of each component (e.g. from `rvinecopulib::vinecop_dist()` or `vinecop()`).
+\item{RVMs}{A list, containing the R-vine copula model of each component (e.g. from \code{rvinecopulib::vinecop_dist()} or \code{vinecop()}).
 \link[rvinecopulib]{vinecop} describes the encoding of a vine copula model.}
 
 \item{mix_probs}{A vector of length k (number of components), containing mixture proportion of each component}
@@ -54,4 +54,5 @@ margin_pars[,3,1] <- c(0.8, 0.8, 0, 0)
 margin_pars[,3,2] <- c(4, 2, 5, 0)
 x_data <- rvcmm(dims, obs, margin, margin_pars, RVMs)
 }
+
 }

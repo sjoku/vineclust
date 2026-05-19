@@ -43,10 +43,7 @@ test_that("proper print/summary generic functions", {
   svcmm <- summary(fit)
   expect_type(svcmm$margins, "character")
   expect_type(svcmm$marginal_pars, "double")
-  expect_type(svcmm$copula, "double")
-  expect_type(svcmm$copula_first_par, "double")
-  expect_type(svcmm$copula_second_par, "double")
-  expect_type(svcmm$vine_structure, "double")
+  expect_type(svcmm$vine_models, "list")
   expect_type(svcmm$mixture_probs, "double")
 })
 

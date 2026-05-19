@@ -15,7 +15,14 @@ vcmm(
   methods = c("kmeans"),
   threshold = 1e-04,
   maxit = 10,
-  cores = 1
+  cores = 1,
+  verbose = FALSE,
+  burn_in_iters = 5,
+  trunc_lvl = 2,
+  tau_threshold = 0.1,
+  batch_size = NULL,
+  ema_alpha = "decay",
+  max_iter = 500
 )
 }
 \arguments{
@@ -33,7 +40,7 @@ before/after the ECM phase of clustering.
 
 \item{vinestr}{A matrix specifying vine tree structures before/after the ECM phase of clustering.
 The default is automatic selection.
-\link[rvinecopulib]{rvine_structure} checks for a valid R-vine matrix.}
+\link[rvinecopulib]{rvine_structure} checks for a valid R-vine structure.}
 
 \item{trunclevel}{An integer showing the level of truncation for vine tree structures before the ECM phase of clustering.
 The default is 1.}
@@ -43,9 +50,8 @@ to be fitted before/after the ECM phase of clustering.
 The default is c('cauchy','gamma','llogis','lnorm','logis','norm','snorm','std', 'sstd').
 Other distributions not (yet) allowed.}
 
-\item{bicop}{A vector of strings or integers denoting the bivariate copula families to be fitted
+\item{bicop}{A vector of integers or strings denoting the parametric bivariate copula families to be fitted
 before/after the ECM phase of clustering.
-You may use string assignments such as c("all"), c("parametric"), c("nonparametric"), or specific families like c("clayton", "gumbel"). Legacy integer vectors are also accepted and mapped correctly.
 The default is c(1,2,3,4,5,6,7,8,10,13,14,16,17,18,20,23,24,26,27,28,30,33,34,36,37,38,40).
 \link[rvinecopulib]{bicop_dist} describes the available families with their specifications.}
 
@@ -61,6 +67,18 @@ for model selection before the ECM phase of clustering. Current options:
 \item{maxit}{An integer, specifying the maximum number of iterations in the CM-step 2 optimization. The default is 10.}
 
 \item{cores}{An integer, showing the number of cores to use for parallel computing.}
+
+\item{verbose}{A boolean indicating whether to log detailed debugging steps. Defaults to \code{FALSE}.}
+
+\item{burn_in_iters}{An integer specifying the number of initial iterations to perform full vine tree structure estimation before freezing it. Defaults to 5.}
+
+\item{trunc_lvl}{An integer showing the level of truncation for vine tree structures during the CM-steps. Defaults to 2.}
+
+\item{tau_threshold}{A numeric threshold for Kendall's tau below which pair-copulas are set to independence. Defaults to 0.1.}
+
+\item{batch_size}{An integer specifying the random sub-sample size for stochastic mini-batch EM. If NULL, uses the full dataset. Defaults to NULL.}
+
+\item{ema_alpha}{A numeric between 0 and 1 specifying the smoothing factor for Exponential Moving Average updates across batches. Defaults to 0.8.}
 }
 \value{
 An object of class vcmm result. It contains the elements
@@ -97,6 +115,7 @@ RVMs_fitted <- fit$output$vine_models
 dens <- dvcmm(c(2.747, 0.1467, 0.13, 0.05334), fit$output$margin, 
               fit$output$marginal_param, RVMs_fitted, fit$output$mixture_prob)
 }
+
 }
 \references{
 Sahin and Czado (2021), Vine copula mixture models and clustering for non-Gaussian data, Econometrics and Statistics.
