@@ -97,7 +97,7 @@ vcmm <- function(data, total_comp, is_cvine=NA, vinestr=NA, trunclevel=1, mar=NA
   final_mar <- mar
   final_bicop <- bicop
   final_bicop_mapped <- map_family(bicop)
-  winner_bic <- 1000000
+  winner_bic <- Inf
 
   
   global_min <- apply(data, 2, min)
@@ -158,8 +158,13 @@ vcmm <- function(data, total_comp, is_cvine=NA, vinestr=NA, trunclevel=1, mar=NA
           margin_densities[,,j] <- eval_all_margins_cpp(data_batch, marginal_fams[,j], marginal_params[,,j], "pdf")
         }
         
+        margin_densities[is.na(margin_densities)] <- 1e-300
         margin_densities[margin_densities < 1e-300] <- 1e-300
+        margin_densities[margin_densities > 1e300] <- 1e300
+        
+        rvine_densities[is.na(rvine_densities)] <- 1e-300
         rvine_densities[rvine_densities < 1e-300] <- 1e-300
+        rvine_densities[rvine_densities > 1e300] <- 1e300
         
         log_lik_points <- matrix(0, nrow=total_obs_batch, ncol=total_comp)
         for(j in 1:total_comp) {
@@ -287,8 +292,13 @@ vcmm <- function(data, total_comp, is_cvine=NA, vinestr=NA, trunclevel=1, mar=NA
       for(j in 1:total_comp){
          margin_densities[,,j] <- eval_all_margins_cpp(data, marginal_fams[,j], marginal_params[,,j], "pdf")
       }
+      margin_densities[is.na(margin_densities)] <- 1e-300
       margin_densities[margin_densities < 1e-300] <- 1e-300
+      margin_densities[margin_densities > 1e300] <- 1e300
+      
+      rvine_densities[is.na(rvine_densities)] <- 1e-300
       rvine_densities[rvine_densities < 1e-300] <- 1e-300
+      rvine_densities[rvine_densities > 1e300] <- 1e300
       
       log_lik_points <- matrix(0, nrow=total_obs, ncol=total_comp)
       for(j in 1:total_comp) {
@@ -367,8 +377,13 @@ predict.vcmm_res <- function(object, newdata = NULL, ...) {
     rvine_densities[,j] <- rvinecopulib::dvinecop(u_data_safe, object$output$vine_models[[j]])
   }
   
+  margin_densities[is.na(margin_densities)] <- 1e-300
   margin_densities[margin_densities < 1e-300] <- 1e-300
+  margin_densities[margin_densities > 1e300] <- 1e300
+  
+  rvine_densities[is.na(rvine_densities)] <- 1e-300
   rvine_densities[rvine_densities < 1e-300] <- 1e-300
+  rvine_densities[rvine_densities > 1e300] <- 1e300
   
   log_lik_points <- matrix(0, nrow=total_obs, ncol=total_comp)
   for(j in 1:total_comp) {
